@@ -1,0 +1,17 @@
+{
+	"folders": [
+		{
+			"name": "nrf52840dk _st7735s_lvgl",
+			"path": "."
+		}
+	],
+	"settings": {
+		"files.associations": {
+			"main.h": "c",
+			"function.h": "c",
+			"lv_hal_disp.h": "c",
+			"lvgl.h": "c",
+			"random": "c"
+		}
+	}
+}
