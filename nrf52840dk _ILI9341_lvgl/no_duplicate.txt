@@ -1,0 +1,291 @@
+#include "lvgl.h"
+#include <string.h>
+#include <stdio.h>
+
+// Structure to store call information
+typedef struct {
+    uint16_t room_number;
+    char call_type[10];
+    uint32_t wait_time;
+    char status[10];
+    lv_timer_t *timer;
+    bool is_emergency;
+} call_entry_t;
+
+#define MAX_CALLS 10
+static call_entry_t calls[MAX_CALLS];
+static int call_count = 0;
+static lv_obj_t *main_table;
+static lv_obj_t *emergency_btn;
+static lv_obj_t *assist_btn;
+
+// Function prototypes
+static void update_table(void);
+static void add_call(bool is_emergency);
+static void update_timer_cb(lv_timer_t *timer);
+static void emergency_btn_cb(lv_event_t *e);
+static void assist_btn_cb(lv_event_t *e);
+static void insert_call_sorted(call_entry_t new_call);
+static void table_draw_event_cb(lv_event_t *e);
+static bool is_duplicate_call(uint16_t room_number);
+
+// Check if a call from this room already exists
+static bool is_duplicate_call(uint16_t room_number)
+{
+    for(int i = 0; i < call_count; i++) {
+        if(calls[i].room_number == room_number) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static void update_timer_cb(lv_timer_t *timer)
+{
+    // Find which call this timer belongs to
+    for(int i = 0; i < call_count; i++) {
+        if(calls[i].timer == timer) {
+            calls[i].wait_time++;
+            break;
+        }
+    }
+    update_table();
+}
+
+static void insert_call_sorted(call_entry_t new_call)
+{
+    int insert_pos = 0;
+    
+    // Find insert position based on priority (emergency first)
+    for(int i = 0; i < call_count; i++) {
+        if(new_call.is_emergency && !calls[i].is_emergency) {
+            insert_pos = i;
+            break;
+        } else {
+            insert_pos = i + 1;
+        }
+    }
+    
+    // Shift existing calls to make room
+    for(int i = call_count; i > insert_pos; i--) {
+        calls[i] = calls[i - 1];
+    }
+    
+    // Insert new call
+    calls[insert_pos] = new_call;
+    call_count++;
+}
+
+static void add_call(bool is_emergency)
+{
+    static uint16_t room_counter = 100;
+    
+    // Check if we've reached maximum calls
+    if(call_count >= MAX_CALLS) {
+        // Optionally show a message that queue is full
+        printf("Call queue is full!\n");
+        return;
+    }
+    
+    // Check if this room already has an active call
+    if(is_duplicate_call(room_counter)) {
+        // Optionally show a message that this room already has a call
+        printf("Room %d already has an active call!\n", room_counter);
+        return;
+    }
+    
+    call_entry_t new_call;
+    new_call.room_number = room_counter++;
+    new_call.wait_time = 0;
+    strcpy(new_call.status, "New");
+    new_call.is_emergency = is_emergency;
+    
+    if(is_emergency) {
+        strcpy(new_call.call_type, "Emerg");
+    } else {
+        strcpy(new_call.call_type, "Assist");
+    }
+    
+    // Create timer for this call
+    new_call.timer = lv_timer_create(update_timer_cb, 1000, NULL);
+    
+    if(call_count == 0) {
+        calls[0] = new_call;
+        call_count++;
+    } else {
+        insert_call_sorted(new_call);
+    }
+    
+    update_table();
+}
+
+// Draw event callback for custom cell styling
+static void table_draw_event_cb(lv_event_t *e)
+{
+    lv_obj_t *table = lv_event_get_target(e);
+    lv_draw_task_t *draw_task = lv_event_get_draw_task(e);
+    
+    // Add NULL checks to prevent segmentation fault
+    if(draw_task == NULL) return;
+    
+    lv_draw_dsc_base_t *base_dsc = (lv_draw_dsc_base_t *)lv_draw_task_get_draw_dsc(draw_task);
+    if(base_dsc == NULL) return;
+    
+    // Only handle cell drawing (PART_ITEMS)
+    if(base_dsc->part != LV_PART_ITEMS) return;
+    
+    uint32_t row = base_dsc->id1;
+    uint32_t col = base_dsc->id2;
+    
+    // Safety check - ensure row and col are valid
+    if(row >= lv_table_get_row_cnt(table) || col >= lv_table_get_col_cnt(table)) return;
+    
+    // Style all cells with center alignment
+    lv_draw_label_dsc_t *label_dsc = lv_draw_task_get_label_dsc(draw_task);
+    if(label_dsc) {
+        label_dsc->align = LV_TEXT_ALIGN_CENTER;
+    }
+    
+    // Handle header row (row 0)
+    if(row == 0) {
+        lv_draw_fill_dsc_t *fill_dsc = lv_draw_task_get_fill_dsc(draw_task);
+        if(fill_dsc) {
+            fill_dsc->color = lv_palette_main(LV_PALETTE_GREY);
+            fill_dsc->opa = LV_OPA_COVER;
+        }
+        
+        if(label_dsc) {
+            label_dsc->color = lv_color_white();
+        }
+        return;
+    }
+    
+    // Handle data rows (row > 0)
+    int call_index = row - 1; // Convert to call array index
+    
+    // Add boundary check for calls array
+    if(call_index >= 0 && call_index < call_count) {
+        // Check if this is an emergency call
+        if(calls[call_index].is_emergency) {
+            lv_draw_fill_dsc_t *fill_dsc = lv_draw_task_get_fill_dsc(draw_task);
+            if(fill_dsc) {
+                fill_dsc->color = lv_palette_main(LV_PALETTE_RED);
+                fill_dsc->opa = LV_OPA_COVER;
+            }
+            
+            if(label_dsc) {
+                label_dsc->color = lv_color_white();
+            }
+        }
+    }
+}
+
+static void update_table(void)
+{
+    if(main_table == NULL) return;
+    
+    // Clear existing rows
+    lv_table_set_row_cnt(main_table, 1); // Keep header
+    
+    // Set headers
+    lv_table_set_cell_value(main_table, 0, 0, "Room Number");
+    lv_table_set_cell_value(main_table, 0, 1, "Call Type");
+    lv_table_set_cell_value(main_table, 0, 2, "Wait");
+    lv_table_set_cell_value(main_table, 0, 3, "Status");
+    
+    // Add data rows
+    for(int i = 0; i < call_count; i++) {
+        int row = i + 1; // +1 for header
+        lv_table_set_row_cnt(main_table, row + 1);
+        
+        // Room number
+        char room_str[20];
+        lv_snprintf(room_str, sizeof(room_str), "Room %d", calls[i].room_number);
+        lv_table_set_cell_value(main_table, row, 0, room_str);
+        
+        // Call type
+        lv_table_set_cell_value(main_table, row, 1, calls[i].call_type);
+        
+        // Wait time
+        char time_str[16];
+        uint32_t hours = calls[i].wait_time / 3600;
+        uint32_t minutes = (calls[i].wait_time % 3600) / 60;
+        uint32_t seconds = calls[i].wait_time % 60;
+        lv_snprintf(time_str, sizeof(time_str), "%02d:%02d:%02d", hours, minutes, seconds);
+        lv_table_set_cell_value(main_table, row, 2, time_str);
+        
+        // Status
+        lv_table_set_cell_value(main_table, row, 3, calls[i].status);
+    }
+    
+    // Adjust column widths
+    lv_table_set_column_width(main_table, 0, 120);
+    lv_table_set_column_width(main_table, 1, 80);
+    lv_table_set_column_width(main_table, 2, 100);
+    lv_table_set_column_width(main_table, 3, 80);
+    
+    // Force redraw
+    lv_obj_invalidate(main_table);
+}
+
+static void emergency_btn_cb(lv_event_t *e)
+{
+    lv_event_code_t code = lv_event_get_code(e);
+    if(code == LV_EVENT_CLICKED) {
+        add_call(true);  // Add emergency call
+    }
+}
+
+static void assist_btn_cb(lv_event_t *e)
+{
+    lv_event_code_t code = lv_event_get_code(e);
+    if(code == LV_EVENT_CLICKED) {
+        add_call(false);  // Add assist call
+    }
+}
+
+lv_obj_t * assist_screen_create(void)
+{
+    // Initialize calls array
+    memset(calls, 0, sizeof(calls));
+    call_count = 0;
+    
+    // Create the main table
+    main_table = lv_table_create(lv_scr_act());
+    if(main_table == NULL) return NULL;
+    
+    lv_obj_set_pos(main_table, 20, 100);
+    lv_obj_set_size(main_table, 400, 300);
+    
+    // Set border and grid styling
+    lv_obj_set_style_border_width(main_table, 1, 0);
+    lv_obj_set_style_border_color(main_table, lv_color_black(), 0);
+    lv_obj_set_style_pad_all(main_table, 0, 0);
+    
+    // Set default cell styles
+    lv_obj_set_style_bg_color(main_table, lv_color_white(), LV_PART_ITEMS);
+    lv_obj_set_style_text_color(main_table, lv_color_black(), LV_PART_ITEMS);
+    
+    // Add draw event callback for custom cell styling
+    lv_obj_add_event_cb(main_table, table_draw_event_cb, LV_EVENT_DRAW_TASK_ADDED, NULL);
+    
+    // Set column count
+    lv_table_set_col_cnt(main_table, 4);
+    
+    // Initialize table with headers
+    lv_table_set_row_cnt(main_table, 1);
+    
+    // Set headers
+    lv_table_set_cell_value(main_table, 0, 0, "Room Number");
+    lv_table_set_cell_value(main_table, 0, 1, "Call Type");
+    lv_table_set_cell_value(main_table, 0, 2, "Wait");
+    lv_table_set_cell_value(main_table, 0, 3, "Status");
+    
+    // Adjust column widths
+    lv_table_set_column_width(main_table, 0, 120);
+    lv_table_set_column_width(main_table, 1, 80);
+    lv_table_set_column_width(main_table, 2, 100);
+    lv_table_set_column_width(main_table, 3, 80);
+    
+    return main_table;
+}
