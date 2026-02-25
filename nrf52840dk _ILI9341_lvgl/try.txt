@@ -104,11 +104,11 @@ static void update_table(void)
     lv_table_set_cell_value(main_table, 0, 2, "Wait");
     lv_table_set_cell_value(main_table, 0, 3, "Status");
     
-    // Set header styling
-    lv_table_set_cell_text_align(main_table, 0, 0, LV_TEXT_ALIGN_CENTER);
-    lv_table_set_cell_text_align(main_table, 0, 1, LV_TEXT_ALIGN_CENTER);
-    lv_table_set_cell_text_align(main_table, 0, 2, LV_TEXT_ALIGN_CENTER);
-    lv_table_set_cell_text_align(main_table, 0, 3, LV_TEXT_ALIGN_CENTER);
+    // Style for the entire table - set text alignment for all cells
+    lv_obj_set_style_text_align(main_table, LV_TEXT_ALIGN_CENTER, LV_PART_ITEMS);
+    
+    // Style the header row differently if desired
+    // Note: For header-specific styling, you'd need to use states or separate styling
     
     // Add data rows
     for(int i = 0; i < call_count; i++) {
@@ -134,24 +134,42 @@ static void update_table(void)
         // Status
         lv_table_set_cell_value(main_table, row, 3, calls[i].status);
         
-        // Center align data cells
-        lv_table_set_cell_text_align(main_table, row, 0, LV_TEXT_ALIGN_CENTER);
-        lv_table_set_cell_text_align(main_table, row, 1, LV_TEXT_ALIGN_CENTER);
-        lv_table_set_cell_text_align(main_table, row, 2, LV_TEXT_ALIGN_CENTER);
-        lv_table_set_cell_text_align(main_table, row, 3, LV_TEXT_ALIGN_CENTER);
-        
-        // Style emergency rows with red background
+        // Style emergency rows with red background using states
         if(calls[i].is_emergency) {
-            lv_table_set_cell_bg_color(main_table, row, 0, lv_palette_main(LV_PALETTE_RED));
-            lv_table_set_cell_bg_color(main_table, row, 1, lv_palette_main(LV_PALETTE_RED));
-            lv_table_set_cell_bg_color(main_table, row, 2, lv_palette_main(LV_PALETTE_RED));
-            lv_table_set_cell_bg_color(main_table, row, 3, lv_palette_main(LV_PALETTE_RED));
-            lv_table_set_cell_text_color(main_table, row, 0, lv_color_white());
-            lv_table_set_cell_text_color(main_table, row, 1, lv_color_white());
-            lv_table_set_cell_text_color(main_table, row, 2, lv_color_white());
-            lv_table_set_cell_text_color(main_table, row, 3, lv_color_white());
+            // Set emergency row styling using state for all columns
+            for(int col = 0; col < 4; col++) {
+                lv_table_add_cell_state(main_table, row, col, LV_STATE_USER_1);
+            }
         }
     }
+    
+    // Configure styles for emergency cells (USER_1 state)
+    lv_obj_set_style_bg_color(main_table, lv_palette_main(LV_PALETTE_RED), 
+                              LV_PART_ITEMS | LV_STATE_USER_1);
+    lv_obj_set_style_bg_opa(main_table, LV_OPA_COVER, 
+                            LV_PART_ITEMS | LV_STATE_USER_1);
+    lv_obj_set_style_text_color(main_table, lv_color_white(), 
+                                LV_PART_ITEMS | LV_STATE_USER_1);
+    
+    // Style for header row (row 0) - make it stand out
+    // Note: This applies to all cells in the header row
+    for(int col = 0; col < 4; col++) {
+        lv_table_add_cell_state(main_table, 0, col, LV_STATE_USER_2);
+    }
+    
+    // Style for header cells
+    lv_obj_set_style_bg_color(main_table, lv_palette_main(LV_PALETTE_GREY), 
+                              LV_PART_ITEMS | LV_STATE_USER_2);
+    lv_obj_set_style_text_color(main_table, lv_color_white(), 
+                                LV_PART_ITEMS | LV_STATE_USER_2);
+    lv_obj_set_style_text_font(main_table, &lv_font_montserrat_14, 
+                               LV_PART_ITEMS | LV_STATE_USER_2);
+    
+    // Default style for normal cells
+    lv_obj_set_style_bg_color(main_table, lv_color_white(), 
+                              LV_PART_ITEMS | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_color(main_table, lv_color_black(), 
+                                LV_PART_ITEMS | LV_STATE_DEFAULT);
     
     // Adjust column widths
     lv_table_set_column_width(main_table, 0, 120);
